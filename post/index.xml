@@ -19,14 +19,14 @@
 
 &lt;p&gt;Let&amp;rsquo;s deploy a private Docker registry that we can use for solo development or in a small team.&lt;/p&gt;
 
-&lt;p&gt;To keep the setup simple we&amp;rsquo;ll use Basic HTTP Auth instead of the more elaborate token authentication of the registry.&lt;/p&gt;
+&lt;p&gt;To keep the setup simple we&amp;rsquo;ll use Basic HTTP Auth instead of the more elaborate &lt;a href=&#34;http://docs.docker.com/registry/spec/auth/token/&#34;&gt;token authentication&lt;/a&gt;.&lt;/p&gt;
 
 &lt;p&gt;We&amp;rsquo;ll need:&lt;/p&gt;
 
 &lt;ul&gt;
-&lt;li&gt;A server (I used a the smallest DigitalOcean instance).&lt;/li&gt;
+&lt;li&gt;A server (I used the smallest DigitalOcean instance).&lt;/li&gt;
 &lt;li&gt;A domain name.&lt;/li&gt;
-&lt;li&gt;A SSL certificate for our domain (they can be purchased cheaply from e.g. SSLs.com).&lt;/li&gt;
+&lt;li&gt;A SSL certificate for our domain, which can be purchased cheaply from e.g. SSLs.com. (Hopefully &lt;a href=&#34;https://letsencrypt.org/&#34;&gt;Let&amp;rsquo;s Encrypt&lt;/a&gt; will make this &lt;a href=&#34;https://twitter.com/zoobab/status/607563008022355969&#34;&gt;easier and cheaper&lt;/a&gt; soon!)&lt;/li&gt;
 &lt;/ul&gt;
 
 &lt;h2 id=&#34;setting-up-the-server:8203300be8c03c5fae40f9de3748014e&#34;&gt;Setting up the server&lt;/h2&gt;
@@ -45,7 +45,7 @@
 
 &lt;p&gt;Run the following to start the registry:&lt;/p&gt;
 
-&lt;pre&gt;&lt;code&gt;docker run -d \
+&lt;pre&gt;&lt;code&gt;$ docker run -d \
     -p 127.0.0.1::5000
     -v $HOME/registry/storage:/registry \
     -e REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/registry \
@@ -56,7 +56,7 @@
 
 &lt;p&gt;The &lt;code&gt;VIRTUAL_HOST&lt;/code&gt; setting will be used by &lt;code&gt;nginx-proxy&lt;/code&gt; (see below).&lt;/p&gt;
 
-&lt;p&gt;To verify that it&amp;rsquo;s running, first let&amp;rsquo;s find out to which port the container&amp;rsquo;s port 5000 is mapped. Run &lt;code&gt;docker ps&lt;/code&gt; and look for a line containing &lt;code&gt;127.0.0.1:32774-&amp;gt;5000/tcp&lt;/code&gt;. In this case, the port is 32774.&lt;/p&gt;
+&lt;p&gt;To verify that it&amp;rsquo;s running, first let&amp;rsquo;s find out to which port the container&amp;rsquo;s port 5000 is mapped. Run &lt;code&gt;docker ps&lt;/code&gt; and look for a line containing something like &lt;code&gt;127.0.0.1:32774-&amp;gt;5000/tcp&lt;/code&gt;. In this case, the port is 32774.&lt;/p&gt;
 
 &lt;p&gt;Run &lt;code&gt;curl http://localhost:32774/v2/&lt;/code&gt; (where 32774 is the port you saw on &lt;code&gt;docker ps&lt;/code&gt;). The Docker registry will return &lt;code&gt;{}&lt;/code&gt;.&lt;/p&gt;
 
@@ -70,11 +70,11 @@
 
 &lt;p&gt;If you used a cheap provider you&amp;rsquo;ll receive a bunch of certificates, which you&amp;rsquo;ll need to concatenate into a bundle. In the case of a Comodo certificate, you&amp;rsquo;d have to do so as follows (the order matters!):&lt;/p&gt;
 
-&lt;pre&gt;&lt;code&gt;cat &amp;lt;yourdomain&amp;gt;.crt \
-COMODORSADomainValidationSecureServerCA.crt \
-COMODORSAAddTrustCA.crt \
-AddTrustExternalCARoot.crt \
-&amp;gt; bundle.csr
+&lt;pre&gt;&lt;code&gt;$ cat &amp;lt;yourdomain&amp;gt;.crt \
+    COMODORSADomainValidationSecureServerCA.crt \
+    COMODORSAAddTrustCA.crt \
+    AddTrustExternalCARoot.crt \
+    &amp;gt; bundle.csr
 &lt;/code&gt;&lt;/pre&gt;
 
 &lt;h3 id=&#34;setting-up-nginx-proxy:8203300be8c03c5fae40f9de3748014e&#34;&gt;Setting up nginx-proxy&lt;/h3&gt;
@@ -102,8 +102,6 @@ add_header Docker-Distribution-API-Version registry/2.0 always;
 
 &lt;h4 id=&#34;password:8203300be8c03c5fae40f9de3748014e&#34;&gt;Password&lt;/h4&gt;
 
-&lt;p&gt;Create a file under &lt;code&gt;nginx/passwords&lt;/code&gt; named &lt;code&gt;&amp;lt;your-domain-name&amp;gt;&lt;/code&gt; containing for each user:&lt;/p&gt;
-
 &lt;p&gt;For each user, run the following:&lt;/p&gt;
 
 &lt;pre&gt;&lt;code&gt;printf &amp;quot;&amp;lt;username&amp;gt;:$(openssl passwd -crypt &amp;lt;password&amp;gt;)n&amp;quot; \
@@ -119,7 +117,7 @@ add_header Docker-Distribution-API-Version registry/2.0 always;
 
 &lt;p&gt;Run the following:&lt;/p&gt;
 
-&lt;pre&gt;&lt;code&gt;docker run -d -p 443:443 \
+&lt;pre&gt;&lt;code&gt;$ docker run -d -p 443:443 \
     -v $HOME/certs:/etc/nginx/certs \
     -v $HOME/nginx/vhost.d:/etc/nginx/vhost.d:ro \
     -v $HOME/nginx/passwords:/etc/nginx/passwords:ro \
@@ -128,7 +126,12 @@ add_header Docker-Distribution-API-Version registry/2.0 always;
     jwilder/nginx-proxy
 &lt;/code&gt;&lt;/pre&gt;
 
-&lt;p&gt;This will start &lt;code&gt;nginx&lt;/code&gt; on port 443, and it will automatically set up a virtual host for our docker registry based on its &lt;code&gt;VIRTUAL_HOST&lt;/code&gt; environment variable.&lt;/p&gt;
+&lt;p&gt;Optionally, you may want to see the nginx logs, which are discarded by default. To do this, create a &lt;code&gt;nginx/log&lt;/code&gt; directory and add the following line to the previous command:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;-v $HOME/nginx/log:/var/log/nginx
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Running this &lt;code&gt;docker run&lt;/code&gt; command will start &lt;code&gt;nginx&lt;/code&gt; listening on port 443, and it will automatically set up a virtual host for our docker registry based on its &lt;code&gt;VIRTUAL_HOST&lt;/code&gt; environment variable.&lt;/p&gt;
 
 &lt;h2 id=&#34;log-in:8203300be8c03c5fae40f9de3748014e&#34;&gt;Log in&lt;/h2&gt;
 
@@ -138,9 +141,9 @@ add_header Docker-Distribution-API-Version registry/2.0 always;
 
 &lt;p&gt;Now you can try pushing a simple container to your registry:&lt;/p&gt;
 
-&lt;pre&gt;&lt;code&gt;docker pull hello-world
-docker tag hello-world &amp;lt;your-domain-name&amp;gt;/&amp;lt;your-username&amp;gt;/hello-world
-docker push &amp;lt;your-domain-name&amp;gt;/&amp;lt;your-username&amp;gt;/hello-world
+&lt;pre&gt;&lt;code&gt;$ docker pull hello-world
+$ docker tag hello-world &amp;lt;your-domain-name&amp;gt;/&amp;lt;your-username&amp;gt;/hello-world
+$ docker push &amp;lt;your-domain-name&amp;gt;/&amp;lt;your-username&amp;gt;/hello-world
 &lt;/code&gt;&lt;/pre&gt;
 </description>
     </item>
