@@ -153,7 +153,7 @@ add_header Docker-Distribution-API-Version registry/2.0 always;
 <p>Run the following:</p>
 
 <pre><code>$ docker run -d -p 443:443 \
-    -v $HOME/certs:/etc/nginx/certs \
+    -v $HOME/nginx/certs:/etc/nginx/certs:ro \
     -v $HOME/nginx/vhost.d:/etc/nginx/vhost.d:ro \
     -v $HOME/nginx/passwords:/etc/nginx/passwords:ro \
     -v /var/run/docker.sock:/tmp/docker.sock:ro \
