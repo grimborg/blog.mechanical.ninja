@@ -85,9 +85,7 @@
 
 <p>We&rsquo;ll keep the registry data out of the container, so that the data is persisted independently of the container&rsquo;s lifecycle.</p>
 
-<p>Let&rsquo;s create a <code>$HOME/registry/storage</code> directory.</p>
-
-<p>Run the following to start the registry:</p>
+<p>Create a <code>$HOME/registry/storage</code> directory, and run the following to start the registry:</p>
 
 <pre><code>$ docker run -d \
     -p 127.0.0.1::5000
@@ -125,7 +123,7 @@
 
 <p>Create the directories to store the certificate, the passwords and the vhost settings:</p>
 
-<pre><code>mkdir -p $HOME/nginx/{certs,vhost.d,passwords}
+<pre><code>$ mkdir -p $HOME/nginx/{certs,vhost.d,passwords}
 </code></pre>
 
 <h4 id="ssl-certificate:8203300be8c03c5fae40f9de3748014e">SSL Certificate</h4>
@@ -148,8 +146,8 @@ add_header Docker-Distribution-API-Version registry/2.0 always;
 
 <p>For each user, run the following:</p>
 
-<pre><code>printf &quot;&lt;username&gt;:$(openssl passwd -crypt &lt;password&gt;)n&quot; \
-&gt;&gt; $HOME/nginx/passwords/&lt;your-domain-name&gt;
+<pre><code>$ printf &quot;&lt;username&gt;:$(openssl passwd -crypt &lt;password&gt;)n&quot; \
+    &gt;&gt; $HOME/nginx/passwords/&lt;your-domain-name&gt;
 </code></pre>
 
 <p>This will result on a file named <code>nginx/passwords/&lt;you-domain-name&gt;</code> containing, for each user:</p>
