@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en-us">
+<head>
+  <link href="http://gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+
+  <title> Mechanical Ninja &middot; Mechanical Ninja </title>
+
+  
+  <link rel="stylesheet" href="http://blog.mechanical.ninja//css/poole.css">
+  <link rel="stylesheet" href="http://blog.mechanical.ninja//css/syntax.css">
+  <link rel="stylesheet" href="http://blog.mechanical.ninja//css/hyde.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=PT+Sans:400,400italic,700|Abril+Fatface">
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="http://blog.mechanical.ninja/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="http://blog.mechanical.ninja/favicon.ico">
+
+  
+  <link href="http://blog.mechanical.ninja/index.xml" rel="alternate" type="application/rss+xml" title="Mechanical Ninja" />
+</head>
+
+<body class="theme-base-0b">
+
+<div class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      <h1>Mechanical Ninja</h1>
+      <p class="lead">
+         
+      </p>
+    </div>
+
+    <ul class="sidebar-nav">
+      <li><a href="http://blog.mechanical.ninja/">Home</a> </li>
+      
+        <li><a href="http://oscarvilaplana.cat"> About me </a></li>
+      
+    </ul>
+
+    <p>&copy; 2015. All rights reserved. </p>
+  </div>
+</div>
+
+
+    <div class="content container">
+<div class="posts">
+
+      
+  <div class="post">
+    <h1 class="post-title">
+      <a href="http://blog.mechanical.ninja/post/docker/deploy-simple-registry/">
+        Deploying a private and secure Docker registry
+      </a>
+    </h1>
+
+    <span class="post-date">Sun, Jun 7, 2015</span>
+
+    
+
+<p>Let&rsquo;s deploy a private Docker registry that we can use for solo development or in a small team.</p>
+
+<p>To keep the setup simple we&rsquo;ll use Basic HTTP Auth instead of the more elaborate token authentication of the registry.</p>
+
+<p>We&rsquo;ll need:</p>
+
+<ul>
+<li>A server (I used a the smallest DigitalOcean instance).</li>
+<li>A domain name.</li>
+<li>A SSL certificate for our domain (they can be purchased cheaply from e.g. SSLs.com).</li>
+</ul>
+
+<h2 id="setting-up-the-server:8203300be8c03c5fae40f9de3748014e">Setting up the server</h2>
+
+<p>To run the Docker registry we&rsquo;ll use the <a href="https://docs.docker.com/registry/"><code>registry:2.0</code> container</a>.</p>
+
+<p>To handle SSL and authentication, we&rsquo;ll use nginx, specifically the <a href="https://github.com/jwilder/nginx-proxy"><code>jwilder/nginx-proxy</code> container</a>. This proxy will also make it easy for us to deploy other outward-facing containers.</p>
+
+<p>On the server, any Linux distribution that runs a recent version of Docker will do. I used the latest version of CoreOS.</p>
+
+<h3 id="starting-the-docker-registry:8203300be8c03c5fae40f9de3748014e">Starting the Docker Registry</h3>
+
+<p>We&rsquo;ll keep the registry data out of the container, so that the data is persisted independently of the container&rsquo;s lifecycle.</p>
+
+<p>Let&rsquo;s create a <code>$HOME/registry/storage</code> directory.</p>
+
+<p>Run the following to start the registry:</p>
+
+<pre><code>docker run -d \
+    -p 127.0.0.1::5000
+    -v $HOME/registry/storage:/registry \
+    -e REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/registry \
+    -e VIRTUAL_HOST=&lt;your-domain-name&gt; \
+    --name registry \
+    registry:2.0
+</code></pre>
+
+<p>The <code>VIRTUAL_HOST</code> setting will be used by <code>nginx-proxy</code> (see below).</p>
+
+<p>To verify that it&rsquo;s running, first let&rsquo;s find out to which port the container&rsquo;s port 5000 is mapped. Run <code>docker ps</code> and look for a line containing <code>127.0.0.1:32774-&gt;5000/tcp</code>. In this case, the port is 32774.</p>
+
+<p>Run <code>curl http://localhost:32774/v2/</code> (where 32774 is the port you saw on <code>docker ps</code>). The Docker registry will return <code>{}</code>.</p>
+
+<h3 id="obtaining-a-ssl-certificate:8203300be8c03c5fae40f9de3748014e">Obtaining a SSL certificate</h3>
+
+<p>If you already have a SSL certificate for your domain, skip this step.</p>
+
+<p>Otherwise, you&rsquo;ll need to generate a certificate request. An easy way to do so is to head over to <a href="https://www.digicert.com/easy-csr/openssl.htm">DigiCert&rsquo;s OpenSSL CSR Wizard</a> and fill in the form.</p>
+
+<p>Click &lsquo;Generate&rsquo; and paste the <code>openssl req...</code> command from the wizard onto your shell. You&rsquo;ll get a <code>&lt;domain&gt;.csr</code> file that you&rsquo;ll have to send to your SSL provider to obtain the certificate. I bought mine off SSLs.com for $3.88 (only 1 year). You&rsquo;ll also get a <code>&lt;domain&gt;.key</code>. We&rsquo;ll use both files later.</p>
+
+<p>If you used a cheap provider you&rsquo;ll receive a bunch of certificates, which you&rsquo;ll need to concatenate into a bundle. In the case of a Comodo certificate, you&rsquo;d have to do so as follows (the order matters!):</p>
+
+<pre><code>cat &lt;yourdomain&gt;.crt \
+COMODORSADomainValidationSecureServerCA.crt \
+COMODORSAAddTrustCA.crt \
+AddTrustExternalCARoot.crt \
+&gt; bundle.csr
+</code></pre>
+
+<h3 id="setting-up-nginx-proxy:8203300be8c03c5fae40f9de3748014e">Setting up nginx-proxy</h3>
+
+<p>Create the directories to store the certificate, the passwords and the vhost settings:</p>
+
+<pre><code>mkdir -p $HOME/nginx/{certs,vhost.d,passwords}
+</code></pre>
+
+<h4 id="ssl-certificate:8203300be8c03c5fae40f9de3748014e">SSL Certificate</h4>
+
+<p>Copy your certificate (or bundle) as <code>nginx/certs/&lt;your-domain-name&gt;.crt</code> and your <code>.key</code> file as <code>nginx/certs/&lt;your-domain-name&gt;.key</code>.</p>
+
+<h4 id="vhost-settings:8203300be8c03c5fae40f9de3748014e">VHost Settings</h4>
+
+<p>Create a file under <code>nginx/vhost.d</code> named <code>&lt;your-domain-name&gt;</code>, with this contents:</p>
+
+<pre><code>client_max_body_size 100m;
+auth_basic &quot;Restricted&quot;;
+auth_basic_user_file /etc/nginx/passwords/&lt;your-domain-name&gt;;
+add_header Docker-Distribution-API-Version registry/2.0 always;
+</code></pre>
+
+<p>Tweak the <code>client_max_body_size</code> as desired. That will be the maximum upload size for Docker.</p>
+
+<h4 id="password:8203300be8c03c5fae40f9de3748014e">Password</h4>
+
+<p>Create a file under <code>nginx/passwords</code> named <code>&lt;your-domain-name&gt;</code> containing for each user:</p>
+
+<p>For each user, run the following:</p>
+
+<pre><code>printf &quot;&lt;username&gt;:$(openssl passwd -crypt &lt;password&gt;)n&quot; \
+&gt;&gt; $HOME/nginx/passwords/&lt;your-domain-name&gt;
+</code></pre>
+
+<p>This will result on a file named <code>nginx/passwords/&lt;you-domain-name&gt;</code> containing, for each user:</p>
+
+<pre><code>&lt;username&gt;:&lt;password-hash&gt;
+</code></pre>
+
+<h4 id="start-the-nginx-proxy:8203300be8c03c5fae40f9de3748014e">Start the nginx proxy</h4>
+
+<p>Run the following:</p>
+
+<pre><code>docker run -d -p 443:443 \
+    -v $HOME/certs:/etc/nginx/certs \
+    -v $HOME/nginx/vhost.d:/etc/nginx/vhost.d:ro \
+    -v $HOME/nginx/passwords:/etc/nginx/passwords:ro \
+    -v /var/run/docker.sock:/tmp/docker.sock:ro \
+    --name nginx \
+    jwilder/nginx-proxy
+</code></pre>
+
+<p>This will start <code>nginx</code> on port 443, and it will automatically set up a virtual host for our docker registry based on its <code>VIRTUAL_HOST</code> environment variable.</p>
+
+<h2 id="log-in:8203300be8c03c5fae40f9de3748014e">Log in</h2>
+
+<p>To log into our Docker registry, simply run <code>docker login &lt;your-domain-name&gt;</code> and enter your username, password and e-mail address.</p>
+
+<h2 id="pushing-a-simple-container:8203300be8c03c5fae40f9de3748014e">Pushing a simple container</h2>
+
+<p>Now you can try pushing a simple container to your registry:</p>
+
+<pre><code>docker pull hello-world
+docker tag hello-world &lt;your-domain-name&gt;/&lt;your-username&gt;/hello-world
+docker push &lt;your-domain-name&gt;/&lt;your-username&gt;/hello-world
+</code></pre>
+
+  </div>
+  
+</div>
+</div>
+
+  </body>
+</html>
