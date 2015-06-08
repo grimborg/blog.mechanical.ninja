@@ -175,6 +175,86 @@ add_header Docker-Distribution-API-Version registry/2.0 always;
 
 <p>Running this <code>docker run</code> command will start <code>nginx</code> listening on port 443, and it will automatically set up a virtual host for our docker registry based on its <code>VIRTUAL_HOST</code> environment variable.</p>
 
+<h2 id="keeping-it-running-on-coreos:8203300be8c03c5fae40f9de3748014e">Keeping it running on CoreOS</h2>
+
+<p>With the previous steps you&rsquo;re good to go, but you&rsquo;re running CoreOS you can take advantage of <a href="https://github.com/coreos/fleet">Fleet</a> to start and keep your containers running.</p>
+
+<p>Create a service file for nginx, called <code>nginx.service</code>, with the following contents:</p>
+
+<pre><code>[Unit]
+Description=Nginx
+After=docker.service
+Requires=docker.service
+
+[Service]
+TimeoutStartSec=0
+ExecStartPre=-/usr/bin/docker kill nginx
+ExecStartPre=-/usr/bin/docker rm nginx
+ExecStart=/usr/bin/bash -c &quot;docker run -p 443:443 \
+        -v /home/core/nginx/certs:/etc/nginx/certs:ro \
+        -v /home/core/nginx/vhost.d:/etc/nginx/vhost.d:ro \
+        -v /home/core/nginx/passwords:/etc/nginx/passwords:ro \
+        -v /var/run/docker.sock:/tmp/docker.sock:ro \
+        --name nginx \
+        jwilder/nginx-proxy&quot;
+ExecStop=/usr/bin/docker stop nginx
+Restart=always
+RestartSec=10s
+</code></pre>
+
+<p>Create a service file for the registry, called <code>registry.service</code>, with the following contents:</p>
+
+<pre><code>[Unit]
+Description=Registry
+After=docker.service
+Requires=docker.service
+Requires=nginx.service
+
+[Service]
+TimeoutStartSec=0
+ExecStartPre=-/usr/bin/docker kill registry
+ExecStartPre=-/usr/bin/docker rm registry
+ExecStart=/usr/bin/bash -c &quot;/usr/bin/docker run -p 127.0.0.1::5000 \
+    -v /home/core/registry/storage:/registry \
+    -e REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/registry \
+    -e VIRTUAL_HOST=registry.mechanical.ninja \
+    --name registry registry:2.0&quot;
+ExecStop=/usr/bin/docker stop registry
+Restart=always
+RestartSec=10s
+</code></pre>
+
+<p>Next, load the services:</p>
+
+<pre><code>$ fleetctl load nginx
+Unit registry.service loaded on 34bc7a1a.../188.112.99.247
+
+$ fleetctl load registry
+Unit registry.service loaded on 34bc7a1a.../188.112.99.247
+</code></pre>
+
+<p>Finally, start the registry service by running <code>fleetctl start registry</code>. Because this service depends on nginx (see the <code>Requires=nginx.service</code> entry above), this will also start nginx.</p>
+
+<p>You can run <code>fleetctl list-units</code> to verify that both services are running:</p>
+
+<pre><code>$ fleetctl list-units
+UNIT            MACHINE             ACTIVE  SUB
+nginx.service       34bc7a1a.../188.112.99.247  active  running
+registry.service    34bc7a1a.../188.112.99.247  active  running
+</code></pre>
+
+<p>If there&rsquo;s been any problem you can check the logs of either service by running <code>fleetctl journal nginx</code> or <code>fleetctl journal registry</code>.</p>
+
+<p>If <code>fleet</code> fails to start, make sure that <code>fleet</code> and <code>etcd</code> are running:</p>
+
+<pre><code>$ sudo systemctl start etcd
+$ sudo systemctl start fleet
+</code></pre>
+
+<h3 id="data-storage:8203300be8c03c5fae40f9de3748014e">Data storage</h3>
+
+<p>Note that although we are using Docker&rsquo;s bind mount option (<code>-v</code>) to store the registry, certificates, and configuration data on the local host, the proper way to do this would be to use <a href="https://docs.docker.com/userguide/dockervolumes/">data volume containers</a>. However, if you are running a single server this simple way will work fine.</p>
+
 <h2 id="log-in:8203300be8c03c5fae40f9de3748014e">Log in</h2>
 
 <p>To log into our Docker registry, simply run <code>docker login &lt;your-domain-name&gt;</code> and enter your username, password and e-mail address.</p>

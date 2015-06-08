@@ -131,6 +131,86 @@ add_header Docker-Distribution-API-Version registry/2.0 always;
 
 &lt;p&gt;Running this &lt;code&gt;docker run&lt;/code&gt; command will start &lt;code&gt;nginx&lt;/code&gt; listening on port 443, and it will automatically set up a virtual host for our docker registry based on its &lt;code&gt;VIRTUAL_HOST&lt;/code&gt; environment variable.&lt;/p&gt;
 
+&lt;h2 id=&#34;keeping-it-running-on-coreos:8203300be8c03c5fae40f9de3748014e&#34;&gt;Keeping it running on CoreOS&lt;/h2&gt;
+
+&lt;p&gt;With the previous steps you&amp;rsquo;re good to go, but you&amp;rsquo;re running CoreOS you can take advantage of &lt;a href=&#34;https://github.com/coreos/fleet&#34;&gt;Fleet&lt;/a&gt; to start and keep your containers running.&lt;/p&gt;
+
+&lt;p&gt;Create a service file for nginx, called &lt;code&gt;nginx.service&lt;/code&gt;, with the following contents:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;[Unit]
+Description=Nginx
+After=docker.service
+Requires=docker.service
+
+[Service]
+TimeoutStartSec=0
+ExecStartPre=-/usr/bin/docker kill nginx
+ExecStartPre=-/usr/bin/docker rm nginx
+ExecStart=/usr/bin/bash -c &amp;quot;docker run -p 443:443 \
+        -v /home/core/nginx/certs:/etc/nginx/certs:ro \
+        -v /home/core/nginx/vhost.d:/etc/nginx/vhost.d:ro \
+        -v /home/core/nginx/passwords:/etc/nginx/passwords:ro \
+        -v /var/run/docker.sock:/tmp/docker.sock:ro \
+        --name nginx \
+        jwilder/nginx-proxy&amp;quot;
+ExecStop=/usr/bin/docker stop nginx
+Restart=always
+RestartSec=10s
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Create a service file for the registry, called &lt;code&gt;registry.service&lt;/code&gt;, with the following contents:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;[Unit]
+Description=Registry
+After=docker.service
+Requires=docker.service
+Requires=nginx.service
+
+[Service]
+TimeoutStartSec=0
+ExecStartPre=-/usr/bin/docker kill registry
+ExecStartPre=-/usr/bin/docker rm registry
+ExecStart=/usr/bin/bash -c &amp;quot;/usr/bin/docker run -p 127.0.0.1::5000 \
+    -v /home/core/registry/storage:/registry \
+    -e REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/registry \
+    -e VIRTUAL_HOST=registry.mechanical.ninja \
+    --name registry registry:2.0&amp;quot;
+ExecStop=/usr/bin/docker stop registry
+Restart=always
+RestartSec=10s
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Next, load the services:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ fleetctl load nginx
+Unit registry.service loaded on 34bc7a1a.../188.112.99.247
+
+$ fleetctl load registry
+Unit registry.service loaded on 34bc7a1a.../188.112.99.247
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Finally, start the registry service by running &lt;code&gt;fleetctl start registry&lt;/code&gt;. Because this service depends on nginx (see the &lt;code&gt;Requires=nginx.service&lt;/code&gt; entry above), this will also start nginx.&lt;/p&gt;
+
+&lt;p&gt;You can run &lt;code&gt;fleetctl list-units&lt;/code&gt; to verify that both services are running:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ fleetctl list-units
+UNIT            MACHINE             ACTIVE  SUB
+nginx.service       34bc7a1a.../188.112.99.247  active  running
+registry.service    34bc7a1a.../188.112.99.247  active  running
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;If there&amp;rsquo;s been any problem you can check the logs of either service by running &lt;code&gt;fleetctl journal nginx&lt;/code&gt; or &lt;code&gt;fleetctl journal registry&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;If &lt;code&gt;fleet&lt;/code&gt; fails to start, make sure that &lt;code&gt;fleet&lt;/code&gt; and &lt;code&gt;etcd&lt;/code&gt; are running:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ sudo systemctl start etcd
+$ sudo systemctl start fleet
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;data-storage:8203300be8c03c5fae40f9de3748014e&#34;&gt;Data storage&lt;/h3&gt;
+
+&lt;p&gt;Note that although we are using Docker&amp;rsquo;s bind mount option (&lt;code&gt;-v&lt;/code&gt;) to store the registry, certificates, and configuration data on the local host, the proper way to do this would be to use &lt;a href=&#34;https://docs.docker.com/userguide/dockervolumes/&#34;&gt;data volume containers&lt;/a&gt;. However, if you are running a single server this simple way will work fine.&lt;/p&gt;
+
 &lt;h2 id=&#34;log-in:8203300be8c03c5fae40f9de3748014e&#34;&gt;Log in&lt;/h2&gt;
 
 &lt;p&gt;To log into our Docker registry, simply run &lt;code&gt;docker login &amp;lt;your-domain-name&amp;gt;&lt;/code&gt; and enter your username, password and e-mail address.&lt;/p&gt;
